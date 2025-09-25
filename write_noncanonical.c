@@ -74,6 +74,41 @@ int main(int argc, char *argv[])
     int bytes = writeBytesSerialPort(buf, BUF_SIZE);
     printf("%d bytes written to serial port\n", bytes);
 
+    int nBytesBuf = 0;
+    int state = 0;
+    unsigned char bcc_receive;
+    while (STOP == FALSE)
+    {
+        // Read one byte from serial port.
+        // NOTE: You must check how many bytes were actually read by reading the return value.
+        // In this example, we assume that the byte is always read, which may not be true.
+        unsigned char byte;
+        int bytes = readByteSerialPort(&byte);
+
+        printf("var = 0x%02X\n", byte);
+
+        if (bytes == 0) continue;
+        
+        nBytesBuf += bytes;
+
+        if(byte == 0x7e && state == 0) state = 1;
+        else if((byte == 0x03) && state == 1) {
+            state++;
+            bcc_receive = byte;
+        }
+        else if (byte == 0x07 && state == 2) {
+            state++;
+            bcc_receive = bcc_receive ^ byte;
+        }
+        else if (byte == bcc_receive && state == 3) {
+            state++;
+            printf ("Correct guy\n");
+        }
+        else if (byte == 0x7e && state == 4) STOP = TRUE;
+        else state = 0;
+        
+    }
+
     // Wait until all bytes have been written to the serial port
     sleep(1);
 
