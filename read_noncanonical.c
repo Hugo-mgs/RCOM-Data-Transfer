@@ -81,7 +81,7 @@ int main(int argc, char *argv[])
         nBytesBuf += bytes;
 
         if(byte == 0x7e && state == 0) state = 1;
-        else if((byte == 0x03 || byte == 0x01) && state == 1) {
+        else if((byte == 0x03) && state == 1) {
             state++;
             bcc = byte;
         }
@@ -101,8 +101,22 @@ int main(int argc, char *argv[])
     printf("Total bytes received: %d\n", nBytesBuf);
 
     //Sending hi
-
     
+    // Create string to send
+    unsigned char buf[BUF_SIZE] = {0};
+    unsigned char flag = 0x7E;
+    unsigned char address = 0x03;
+    unsigned char control = 0x07;
+    unsigned char bcc_send = address ^ control;
+
+    buf[0] = flag;
+    buf[1] = address;
+    buf[2] = control;
+    buf[3] = bcc_send;
+    buf[4] = flag;
+
+    int bytes = writeBytesSerialPort(buf, BUF_SIZE);
+    printf("%d bytes written to serial port\n", bytes);
 
     // Close serial port
     if (closeSerialPort() < 0)
