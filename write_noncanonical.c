@@ -91,7 +91,7 @@ int main(int argc, char *argv[])
         
         nBytesBuf += bytes;
 
-        if(byte == 0x7e && state == 0) state = 1;
+        if(byte == 0x7e && state != 4) state = 1;
         else if((byte == 0x03) && state == 1) {
             state++;
             bcc_receive = byte;
