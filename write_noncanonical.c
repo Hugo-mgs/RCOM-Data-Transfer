@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <termios.h>
 #include <unistd.h>
+#include <signal.h>
 
 #define _POSIX_SOURCE 1 // POSIX compliant source
 
@@ -17,16 +18,36 @@
 #define TRUE 1
 
 #define BAUDRATE 38400
-#define BUF_SIZE 256
+#define BUF_SIZE 5
 
 int fd = -1;           // File descriptor for open serial port
 struct termios oldtio; // Serial port settings to restore on closing
 volatile int STOP = FALSE;
 
+// Create string to send
+unsigned char buf[BUF_SIZE] = {0};
+
+int alarmEnabled = FALSE;
+int alarmCount = 0;
+
 int openSerialPort(const char *serialPort, int baudRate);
 int closeSerialPort();
 int readByteSerialPort(unsigned char *byte);
 int writeBytesSerialPort(const unsigned char *bytes, int nBytes);
+
+// ---------------------------------------------------
+// ALARM HANDLER
+// ---------------------------------------------------
+void alarmHandler(int signal)
+{
+    alarmEnabled = FALSE;
+    alarmCount++;
+
+    int bytes = writeBytesSerialPort(buf, BUF_SIZE);
+
+    printf("Alarm #%d received\n", alarmCount);
+    printf("%d bytes written to serial port\n", bytes);
+}
 
 // ---------------------------------------------------
 // MAIN
@@ -57,8 +78,17 @@ int main(int argc, char *argv[])
 
     printf("Serial port %s opened\n", serialPort);
 
-    // Create string to send
-    unsigned char buf[BUF_SIZE] = {0};
+    // Configure the alarm
+
+    struct sigaction act = {0};
+    act.sa_handler = &alarmHandler;
+    if (sigaction(SIGALRM, &act, NULL) == -1)
+    {
+        perror("sigaction");
+        exit(1);
+    }
+
+    printf("Alarm configured\n");
 
     unsigned char flag = 0x7E;
     unsigned char address = 0x03;
@@ -74,20 +104,28 @@ int main(int argc, char *argv[])
     int bytes = writeBytesSerialPort(buf, BUF_SIZE);
     printf("%d bytes written to serial port\n", bytes);
 
+    alarm(3);
+
     int nBytesBuf = 0;
     int state = 0;
     unsigned char bcc_receive;
-    while (STOP == FALSE)
+    while (STOP == FALSE && alarmCount < 4)
     {
+        if (alarmEnabled == FALSE)
+        {
+            alarm(3); // Set alarm to be triggered in 3s
+            alarmEnabled = TRUE;
+        }
+
         // Read one byte from serial port.
         // NOTE: You must check how many bytes were actually read by reading the return value.
         // In this example, we assume that the byte is always read, which may not be true.
         unsigned char byte;
         int bytes = readByteSerialPort(&byte);
 
-        printf("var = 0x%02X\n", byte);
-
         if (bytes == 0) continue;
+        printf("var = 0x%02X ", byte);
+        printf("state = %d\n", state);
         
         nBytesBuf += bytes;
 
@@ -104,9 +142,15 @@ int main(int argc, char *argv[])
             state++;
             printf ("Correct guy\n");
         }
-        else if (byte == 0x7e && state == 4) STOP = TRUE;
+        else if (byte == 0x7e && state == 4) {
+            STOP = TRUE;
+        }
         else state = 0;
-        
+    }
+    if (alarmCount >= 4) {
+        printf("Gave up after %d alarms\n", alarmCount);
+    } else {
+        alarm(0);
     }
 
     // Wait until all bytes have been written to the serial port
@@ -185,8 +229,8 @@ int openSerialPort(const char *serialPort, int baudRate)
 
     // Set input mode (non-canonical, no echo,...)
     newtio.c_lflag = 0;
-    newtio.c_cc[VTIME] = 0; // Block reading
-    newtio.c_cc[VMIN] = 1;  // Byte by byte
+    newtio.c_cc[VTIME] = 1; // Block reading
+    newtio.c_cc[VMIN] = 0;  // Byte by byte
 
     tcflush(fd, TCIOFLUSH);
 
